@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Public Parking - Smart QR Automation</title>
+  
+  <!-- PWA Dynamic Manifest -->
+  <link rel="manifest" id="manifestPlaceholder" href="data:application/manifest+json;utf8,{
+    %22name%22:%22Public%20Parking%22,
+    %22short_name%22:%22PublicParking%22,
+    %22start_url%22:%22/%22,
+    %22display%22:%22standalone%22,
+    %22background_color%22:%22#0f172a%22,
+    %22theme_color%22:%22#4f46e5%22
+  }">
+
+  <!-- CSS & Libraries -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    /* Parking Themed Dynamic Background */
+    body {
+      transition: background-color 1.5s ease, color 0.5s ease;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.92)), 
+                  url('https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=1920&q=80') no-repeat center center fixed;
+      background-size: cover;
+      color: #f8fafc;
+    }
+
+    /* Splash Screen */
+    #splashScreen {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: #090d16;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 99999;
+      transition: opacity 1s ease;
+    }
+
+    .app-logo {
+      width: 55px;
+      height: 55px;
+      border-radius: 50%;
+      object-fit: cover;
+      cursor: pointer;
+      border: 2px solid #38bdf8;
+    }
+
+    .card-custom {
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(12px);
+      color: #ffffff;
+    }
+
+    /* QR Overlay Checkmark */
+    .qr-container {
+      position: relative;
+      display: inline-block;
+      padding: 15px;
+      background: #ffffff;
+      border-radius: 16px;
+    }
+
+    .used-qr-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(15, 23, 42, 0.85);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: #38bdf8;
+    }
+
+    .status-badge-pending {
+      background-color: #f59e0b;
+      color: #000;
+      font-weight: bold;
+    }
+
+    .status-badge-confirmed {
+      background-color: #10b981;
+      color: #fff;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Splash Screen -->
+  <div id="splashScreen">
+    <img id="splashLogo" src="https://via.placeholder.com/150?text=Public+Parking" class="rounded-circle mb-3 shadow-lg" width="120" height="120" alt="Logo">
+    <h1 class="fw-bold tracking-wide text-info">PUBLIC PARKING</h1>
+    <p class="text-light fs-5 mt-2"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading Smart Parking System...</p>
+  </div>
+
+  <!-- Top Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top shadow border-bottom border-secondary">
+    <div class="container-fluid px-4">
+      <a class="navbar-brand fw-bold d-flex align-items-center" href="#">
+        <img id="headerLogo" src="https://via.placeholder.com/60?text=PP" class="app-logo me-2" onclick="handleLogoClick()" title="Click 5 times for Admin">
+        <span id="companyTitleName" class="text-warning">Public Parking</span>
+      </a>
+      
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navContent">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="navContent">
+        <ul class="nav nav-pills ms-auto my-2 my-lg-0" id="mainTab" role="tablist">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#customer-panel">Customer</button></li>
+          <li class="nav-item"><button class="nav-link text-white" data-bs-toggle="tab" data-bs-target="#manager-panel">Manager</button></li>
+          <li class="nav-item"><button class="nav-link text-white" data-bs-toggle="tab" data-bs-target="#owner-panel">Owner</button></li>
+          <li class="nav-item"><button class="nav-link text-white" data-bs-toggle="tab" data-bs-target="#agent-panel">Agent</button></li>
+        </ul>
+        <button id="installAppBtn" class="btn btn-outline-warning btn-sm ms-lg-3 d-none" onclick="installPWA()">
+          <i class="fa-solid fa-download me-1"></i> Install App
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <div class="container my-4 flex-grow-1">
+
+    <div class="tab-content" id="mainTabContent">
+
+      <!-- 1. CUSTOMER PANEL -->
+      <div class="tab-pane fade show active" id="customer-panel">
+        <div class="row justify-content-center">
+          <div class="col-md-6">
+            <div class="card card-custom p-4">
+              <h4 class="text-center fw-bold text-info mb-3"><i class="fa-solid fa-car-side me-2"></i>Parking Registration Form</h4>
+              
+              <form id="customerForm">
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Customer Name <span class="text-danger">*</span></label>
+                  <input type="text" id="cName" class="form-control" required placeholder="Enter full name">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Phone Number <span class="text-danger">*</span></label>
+                  <input type="tel" id="cPhone" class="form-control" required placeholder="Enter mobile number">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Vehicle Number <span class="text-danger">*</span></label>
+                  <input type="text" id="cVehicle" class="form-control" required placeholder="e.g. WB 02 AB 1234">
+                </div>
+                <button type="submit" class="btn btn-info w-100 fw-bold py-2 text-dark">
+                  <i class="fa-solid fa-qrcode me-2"></i>Generate Entry QR Code
+                </button>
+              </form>
+
+              <!-- In-QR Box -->
+              <div id="inQrDisplay" class="text-center mt-4 d-none">
+                <hr class="border-secondary">
+                <span id="qrStatusBadge" class="badge status-badge-pending fs-6 mb-2">STATUS: PENDING</span>
+                
+                <div class="d-flex justify-content-center my-2">
+                  <div class="qr-container" id="qrWrapper">
+                    <div id="qrcodeIn"></div>
+                    <div id="qrUsedOverlay" class="used-qr-overlay d-none">
+                      <i class="fa-solid fa-circle-check fa-4x text-info mb-2"></i>
+                      <h5 class="fw-bold text-white mb-0">USED & COMPLETED</h5>
+                    </div>
+                  </div>
+                </div>
+
+                <p id="qrInstructionText" class="small text-warning fw-semibold mt-2">
+                  ম্যানেজারকে এই কিউআর টি দেখিয়ে পার্কিংয়ে গাড়ি ইন করান।
+                </p>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. MANAGER PANEL -->
+      <div class="tab-pane fade" id="manager-panel">
+        <div class="card card-custom p-4">
+          <h4 class="fw-bold mb-3 text-warning"><i class="fa-solid fa-camera me-2"></i>Manager Gate Scanner</h4>
+          <div id="qr-reader" style="width:100%; max-width:480px; margin:auto;" class="mb-3 border border-secondary rounded"></div>
+          
+          <div class="d-flex justify-content-center gap-2 mb-4">
+            <button class="btn btn-success fw-bold" onclick="startScanner()"><i class="fa-solid fa-play me-1"></i> Start Camera</button>
+            <button class="btn btn-danger fw-bold" onclick="stopScanner()"><i class="fa-solid fa-stop me-1"></i> Stop Camera</button>
+          </div>
+          
+          <h5 class="fw-bold text-info">Manual OTP Exit Backup</h5>
+          <div class="input-group mb-4">
+            <input type="text" id="otpInput" class="form-control" placeholder="Enter 4-digit Customer Secret OTP">
+            <button class="btn btn-warning fw-bold" onclick="processOtpExit()"><i class="fa-solid fa-key me-1"></i> Exit Vehicle</button>
+          </div>
+
+          <h5 class="fw-bold text-light">Parked Vehicles List</h5>
+          <div class="table-responsive">
+            <table class="table table-dark table-hover align-middle">
+              <thead>
+                <tr>
+                  <th>Vehicle No</th>
+                  <th>Entry Time</th>
+                  <th>Status</th>
+                  <th>Contact Owner</th>
+                </tr>
+              </thead>
+              <tbody id="activeVehiclesBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. OWNER PANEL -->
+      <div class="tab-pane fade" id="owner-panel">
+        <div class="card card-custom p-4">
+          <h3 class="fw-bold mb-3 text-info"><i class="fa-solid fa-chart-pie me-2"></i>Owner Dashboard</h3>
+
+          <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="card bg-primary text-white p-3"><h6>Total Vehicles In</h6><h3 id="statIn">0</h3></div></div>
+            <div class="col-md-3"><div class="card bg-success text-white p-3"><h6>Total Vehicles Out</h6><h3 id="statOut">0</h3></div></div>
+            <div class="col-md-3"><div class="card bg-info text-dark p-3"><h6>Cash Earned</h6><h3 id="statCash">₹0</h3></div></div>
+            <div class="col-md-3"><div class="card bg-warning text-dark p-3"><h6>Online Earned</h6><h3 id="statOnline">₹0</h3></div></div>
+          </div>
+
+          <!-- Subscription Renewal -->
+          <div class="border border-secondary rounded p-3 bg-dark mb-4">
+            <h5 class="fw-bold text-warning"><i class="fa-solid fa-credit-card me-2"></i>Subscription Renewal</h5>
+            <div class="row g-2 align-items-center mt-2">
+              <div class="col-md-4">
+                <select id="subDurationSelect" class="form-select bg-dark text-white border-secondary">
+                  <option value="1">1 Day Cycle</option>
+                  <option value="7">7 Days</option>
+                  <option value="30">30 Days (1 Month)</option>
+                  <option value="365">1 Year</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <span class="fs-5 fw-bold text-success">Total: ₹<span id="calcPayableAmount">15.34</span></span>
+              </div>
+              <div class="col-md-4">
+                <button class="btn btn-success w-100 fw-bold" onclick="openPaymentModal()"><i class="fa-solid fa-upload me-1"></i> Upload Payment Proof</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. AGENT PANEL -->
+      <div class="tab-pane fade" id="agent-panel">
+        <div class="card card-custom p-4">
+          <h4 class="fw-bold mb-3 text-info"><i class="fa-solid fa-users-rays me-2"></i>Agent Partner Portal</h4>
+          
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <div class="card bg-dark text-white border-secondary p-3">
+                <h6>Wallet Balance</h6>
+                <h2 id="agentWalletBal" class="text-warning">₹0</h2>
+                <small class="text-muted">Min Withdrawal: ₹100 (Once a month)</small>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card bg-dark text-white border-secondary p-3">
+                <h6>My Referral Link</h6>
+                <input type="text" id="agentRefLink" class="form-control form-control-sm my-2 bg-secondary text-white border-0" readonly value="https://publicparking.app?ref=AGENT101">
+                <button class="btn btn-sm btn-info text-dark fw-bold" onclick="navigator.clipboard.writeText(document.getElementById('agentRefLink').value); alert('Copied Link!');">Copy Link</button>
+              </div>
+            </div>
+          </div>
+
+          <h5 class="fw-bold text-light">Withdraw Balance</h5>
+          <form id="agentWithdrawForm" onsubmit="handleAgentWithdraw(event)" class="row g-2">
+            <div class="col-md-5">
+              <input type="number" id="withdrawAmt" class="form-control" min="100" placeholder="Amount (Min ₹100)" required>
+            </div>
+            <div class="col-md-5">
+              <input type="text" id="withdrawUpi" class="form-control" placeholder="UPI ID (Mandatory)" required>
+            </div>
+            <div class="col-md-2">
+              <button type="submit" class="btn btn-primary w-100 fw-bold">Withdraw</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 5. SECRET SUPER ADMIN MODAL PANEL -->
+  <div class="modal fade" id="superAdminModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content bg-dark text-white border-danger">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title fw-bold"><i class="fa-solid fa-user-ninja me-2"></i>Super Admin Controls</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3 mb-4">
+            <div class="col-md-4"><div class="card bg-secondary text-white p-3"><h6>Total Parkings</h6><h3 id="adminCountParkings">0</h3></div></div>
+            <div class="col-md-4"><div class="card bg-primary text-white p-3"><h6>Today Revenue</h6><h3 id="adminCountDailyRev">₹0</h3></div></div>
+            <div class="col-md-4"><div class="card bg-success text-white p-3"><h6>Monthly Revenue</h6><h3 id="adminCountMonthlyRev">₹0</h3></div></div>
+          </div>
+
+          <h5 class="fw-bold text-warning">WhatsApp Admin Mobile Number</h5>
+          <input type="text" id="adminWhatsappNo" class="form-control bg-secondary text-white mb-3" value="918343088730" placeholder="With Country Code e.g. 918343088730">
+
+          <button class="btn btn-primary fw-bold" onclick="saveAdminConfigs()">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment Modal & WhatsApp Trigger -->
+  <div class="modal fade" id="paySubModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content bg-dark text-white border-info">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold">Pay Subscription & Send WhatsApp</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-center">
+          <p class="mb-1">Pay to Admin UPI ID:</p>
+          <h5 id="payModalUpiText" class="text-info fw-bold mb-3">publicparking@adminupi</h5>
+          
+          <div class="text-start">
+            <label class="form-label fw-semibold">Upload Payment Screenshot</label>
+            <input type="file" id="subProofFile" class="form-control bg-secondary text-white mb-3" accept="image/*">
+            <button class="btn btn-success w-100 fw-bold" onclick="submitSubscriptionProof()"><i class="fa-brands fa-whatsapp me-2"></i> Submit & Send WhatsApp</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase & Functional Libraries -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // 1. Firebase Configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyDJmu9uD5rT5ee1jNLpMQaTVIa_-yTrPzw",
+      authDomain: "public-service-11054.firebaseapp.com",
+      databaseURL: "https://public-service-11054-default-rtdb.firebaseio.com",
+      projectId: "public-service-11054",
+      storageBucket: "public-service-11054.firebasestorage.app",
+      messagingSenderId: "639313474404",
+      appId: "1:639313474404:web:9ac4645e521021c044c071",
+      measurementId: "G-ZMCRHQ4VC3"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Direct Assigned WhatsApp Number
+    let adminWhatsappNumber = "918343088730";
+
+    // Speech Audio Function
+    function speakHindi(text) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const speech = new SpeechSynthesisUtterance(text);
+        speech.lang = 'hi-IN';
+        speech.rate = 0.9;
+        window.speechSynthesis.speak(speech);
+      }
+    }
+
+    // Splash Screen Initializer
+    window.addEventListener('load', () => {
+      speakHindi("पश्चिम बंगाल में पहली बार। इसके डेवलपर कोलकाता के हैं और ओनर का नाम जय है।");
+      setTimeout(() => {
+        const splash = document.getElementById('splashScreen');
+        splash.style.opacity = '0';
+        setTimeout(() => splash.style.display = 'none', 1000);
+      }, 4000);
+    });
+
+    // 2. Secret Admin Trigger (5 Clicks)
+    let logoClicks = 0, clickTimer;
+    function handleLogoClick() {
+      logoClicks++;
+      clearTimeout(clickTimer);
+      clickTimer = setTimeout(() => logoClicks = 0, 2000);
+
+      if (logoClicks >= 5) {
+        logoClicks = 0;
+        const pwd = prompt("Enter Super Admin Security Password:");
+        if (pwd === "7876482550000") {
+          new bootstrap.Modal(document.getElementById('superAdminModal')).show();
+        } else if (pwd !== null) {
+          alert("Unauthorized Password!");
+        }
+      }
+    }
+
+    // 3. Customer Registration & Dynamic Status
+    let activeBookingId = null;
+    document.getElementById('customerForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('cName').value;
+      const phone = document.getElementById('cPhone').value;
+      const vehicle = document.getElementById('cVehicle').value.toUpperCase();
+      const otp = Math.floor(1000 + Math.random() * 9000);
+
+      speakHindi("आपका पंजीकरण पूरा हो गया है। यह क्यूआर कोड मैनेजर को दिखाएं।");
+
+      const entryRef = db.ref('parkings/active_entries').push();
+      activeBookingId = entryRef.key;
+
+      entryRef.set({ name, phone, vehicle, otp, inTime: Date.now(), status: 'PENDING' });
+
+      // Render In-QR Code
+      document.getElementById('qrcodeIn').innerHTML = "";
+      new QRCode(document.getElementById('qrcodeIn'), { text: activeBookingId, width: 160, height: 160 });
+
+      document.getElementById('inQrDisplay').classList.remove('d-none');
+      document.getElementById('qrUsedOverlay').classList.add('d-none');
+
+      // Realtime Listener for Customer Status Change
+      db.ref('parkings/active_entries/' + activeBookingId).on('value', snapshot => {
+        const data = snapshot.val();
+        if(data) {
+          const badge = document.getElementById('qrStatusBadge');
+          if(data.status === 'PENDING') {
+            badge.className = "badge status-badge-pending fs-6 mb-2";
+            badge.innerText = "STATUS: PENDING (NOT IN YET)";
+          } else if(data.status === 'IN') {
+            badge.className = "badge status-badge-confirmed fs-6 mb-2";
+            badge.innerText = "STATUS: CONFIRMED (VEHICLE IN)";
+            document.getElementById('qrInstructionText').innerText = "এটি আউট করার জন্য ব্যবহার করবেন।";
+            speakHindi("आपकी गाड़ी पार्किंग में सफलतापूर्वक एंट्री हो गई है।");
+          }
+        } else {
+          // Record Deleted = Vehicle Exit Confirmed with Checkmark
+          document.getElementById('qrStatusBadge').className = "badge bg-info text-dark fs-6 mb-2";
+          document.getElementById('qrStatusBadge').innerText = "STATUS: COMPLETED & EXITED";
+          document.getElementById('qrUsedOverlay').classList.remove('d-none');
+          speakHindi("आपकी गाड़ी आउट हो चुकी है। धन्यवाद!");
+        }
+      });
+    });
+
+    // 4. Manager Scanner Logic
+    let html5QrcodeScanner;
+    function startScanner() {
+      html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 250 });
+      html5QrcodeScanner.render((text) => processQrScan(text));
+    }
+    function stopScanner() {
+      if(html5QrcodeScanner) html5QrcodeScanner.clear();
+    }
+
+    function processQrScan(bookingId) {
+      db.ref('parkings/active_entries/' + bookingId).once('value', snapshot => {
+        const data = snapshot.val();
+        if(data) {
+          if(data.status === 'PENDING') {
+            // Confirm Entry
+            db.ref('parkings/active_entries/' + bookingId).update({ status: 'IN' });
+            alert("Vehicle Entry Confirmed!");
+          } else if(data.status === 'IN') {
+            // Confirm Exit & Calculate Fare
+            const hrs = Math.max(1, Math.ceil((Date.now() - data.inTime)/(1000*60*60)));
+            const fare = hrs * 20;
+            if(confirm(`Exit Vehicle: ${data.vehicle}\nTotal Bill: ₹${fare}\nConfirm Payment?`)) {
+              // Delete Customer Record for Privacy
+              db.ref('parkings/active_entries/' + bookingId).remove();
+              alert("Payment Collected & Vehicle Exited Successfully!");
+            }
+          }
+        }
+      });
+    }
+
+    // 5. WhatsApp Auto-Message Generators
+    function openPaymentModal() {
+      new bootstrap.Modal(document.getElementById('paySubModal')).show();
+    }
+
+    function submitSubscriptionProof() {
+      const duration = document.getElementById('subDurationSelect').value;
+      const msg = `*NEW SUBSCRIPTION REQUEST*\n\nHello Admin, I have submitted payment proof for ${duration} days subscription.\nPlease activate my Parking ID.`;
+      
+      const whatsappUrl = `https://wa.me/${adminWhatsappNumber}?text=${encodeURIComponent(msg)}`;
+      window.open(whatsappUrl, '_blank');
+    }
+
+    function handleAgentWithdraw(e) {
+      e.preventDefault();
+      const amt = document.getElementById('withdrawAmt').value;
+      const upi = document.getElementById('withdrawUpi').value;
+
+      if(parseInt(amt) < 100) {
+        alert("Minimum withdrawal limit is ₹100!");
+        return;
+      }
+
+      // Open WhatsApp for Agent Manual Withdrawal Notification
+      const msg = `*NEW AGENT WITHDRAWAL REQUEST*\n\nAgent Name: Agent 101\nRequested Amount: ₹${amt}\nUPI ID: ${upi}\nPlease transfer and confirm.`;
+      const whatsappUrl = `https://wa.me/${adminWhatsappNumber}?text=${encodeURIComponent(msg)}`;
+      
+      window.open(whatsappUrl, '_blank');
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+      alert("Withdrawal Requested! WhatsApp opened to notify Admin.");
+    }
+
+    function saveAdminConfigs() {
+      adminWhatsappNumber = document.getElementById('adminWhatsappNo').value;
+      alert("Admin Config Saved!");
+    }
+
+    // PWA Install Prompt
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      document.getElementById('installAppBtn').classList.remove('d-none');
+    });
+
+    function installPWA() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(() => {
+          document.getElementById('installAppBtn').classList.add('d-none');
+          deferredPrompt = null;
+        });
+      }
+    }
+  </script>
+</body>
+</html>
